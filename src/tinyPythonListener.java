@@ -28,7 +28,7 @@ public interface tinyPythonListener extends ParseTreeListener {
 	 * Exit a parse tree produced by {@link tinyPythonParser#file_input}.
 	 * @param ctx the parse tree
 	 */
-	void exitFile_input(tinyPythonParser.File_inputContext ctx);
+	void exitFile_input(tinyPythonParser.File_inputContext ctx) throws IOException;
 	/**
 	 * Enter a parse tree produced by {@link tinyPythonParser#defs}.
 	 * @param ctx the parse tree

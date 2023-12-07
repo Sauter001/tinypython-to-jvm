@@ -37,7 +37,7 @@ public class tinyPythonBaseListener implements tinyPythonListener {
 	 *
 	 * <p>The default implementation does nothing.</p>
 	 */
-	@Override public void exitFile_input(tinyPythonParser.File_inputContext ctx) { }
+	@Override public void exitFile_input(tinyPythonParser.File_inputContext ctx) throws IOException { }
 	/**
 	 * {@inheritDoc}
 	 *
