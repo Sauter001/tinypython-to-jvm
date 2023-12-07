@@ -1,10 +1,8 @@
 def foo(v1, v2):
     return v1 + v2
 
-a= 98
-b = 2 + (a - 1)
-c = (2 + a) - 1
-print a + b
-print c
-print a - c
-print "Hello world!"
+def getOne():
+    return 1
+
+a = 98
+print foo(3, 2)+getOne()

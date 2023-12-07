@@ -7,6 +7,7 @@ import java.util.Stack;
 public class tinyPythonCompiler extends tinyPythonBaseListener {
     ParseTreeProperty<String> convertedProperty = new ParseTreeProperty<>(); // 바뀐 출력을 저장하는 property
     private final Stack<HashMap<String, Symbol>> symbolTable = new Stack<>();
+    private final int BASE_SIZE = 16;
 
     // 생성자
     public tinyPythonCompiler() {
@@ -50,8 +51,8 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
         // main method의 header
         final String MAIN_SNIPPET =
                 ".method public static main([Ljava/lang/String;)V\n" +
-                        "    .limit stack 16\n" + // stack과 local은 기본적으로 16으로 할당
-                        "    .limit locals 16\n";
+                        "    .limit stack " + BASE_SIZE + "\n" + // stack과 local은 기본적으로 16으로 할당
+                        "    .limit locals " + BASE_SIZE + "\n";
 
         // 입력의 각 statement 변환
         StringBuilder mainBody = new StringBuilder();
@@ -185,7 +186,22 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
     }
 
     private String makeFunctionCall(String ident, tinyPythonParser.Opt_parenContext optParen) {
-        return "";
+        int numOfArgs = optParen.expr().size();
+        StringBuilder code = new StringBuilder();
+        String signature = "";
+
+        // 인자 전달이 없는 경우 expr 변환 과정 생략
+        if (numOfArgs > 0) {
+            for (tinyPythonParser.ExprContext expr : optParen.expr()) {
+                code.append(convertedProperty.get(expr));
+                signature += "I";
+            }
+        }
+
+        // signature 정의 및 기본 return int라고 가정
+        signature = ident + "(" + signature + ")I";
+        code.append("invokestatic Test/").append(signature).append("\n");
+        return code.toString();
     }
 
     // 출력 처리
@@ -224,6 +240,79 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
     @Override
     public void exitDefs(tinyPythonParser.DefsContext ctx) {
         super.exitDefs(ctx);
-        convertedProperty.put(ctx, "\n");
+        StringBuilder defs = new StringBuilder();
+
+        for (int i = 0; i < ctx.def_stmt().size(); ++i) {
+            defs.append(convertedProperty.get(ctx.def_stmt(i)));
+        }
+
+        convertedProperty.put(ctx, defs.toString());
+    }
+
+    // 함수 정의 시작 시
+    @Override
+    public void enterDef_stmt(tinyPythonParser.Def_stmtContext ctx) {
+        super.enterDef_stmt(ctx);
+
+        String funcName = ctx.NAME().getText();
+        System.out.println("<Def " + funcName + ">");
+        symbolTable.push(new HashMap<>()); // 새 symbol 추가
+
+        // 새 symbol에 인자 정보 추가
+        HashMap<String, Symbol> localSymbol = symbolTable.peek();
+
+        if (!ctx.args().NAME().isEmpty()) {
+            // parameter가 있는 경우 현재 symbol 테이블에 추가한다.
+            for (int i = 0; i < ctx.args().NAME().size(); ++i) {
+                localSymbol.put(ctx.args().NAME(i).getText(), new Symbol("int", i));
+            }
+        }
+    }
+
+    // 함수 정의  처리 끝날 시
+    @Override
+    public void exitDef_stmt(tinyPythonParser.Def_stmtContext ctx) {
+        super.exitDef_stmt(ctx);
+
+        String funcName = ctx.NAME().getText();
+        String code = convertedProperty.get(ctx.suite());
+        String numOfArgs = "";
+
+        for (int i = 0; i < ctx.args().NAME().size(); ++i) {
+            numOfArgs += "I";
+        }
+
+        String definition = ".method public static " + funcName + "(" + numOfArgs + ")I\n " +
+                "    .limit stack " + BASE_SIZE + "\n" +
+                "    .limit locals " + BASE_SIZE + "\n" +
+                code +
+                ".end method\n\n";
+
+        symbolTable.pop(); // symbol table 종료
+        convertedProperty.put(ctx, definition);
+        System.out.println("<End def>\n");
+    }
+
+    @Override
+    public void exitReturn_stmt(tinyPythonParser.Return_stmtContext ctx) {
+        super.exitReturn_stmt(ctx);
+        String expr = convertedProperty.get(ctx.expr());
+        String code = expr + "ireturn\n";
+        convertedProperty.put(ctx, code);
+    }
+
+    @Override
+    public void exitSuite(tinyPythonParser.SuiteContext ctx) {
+        super.exitSuite(ctx);
+        System.out.println("[suite]");
+        if (ctx.simple_stmt() != null) {
+            convertedProperty.put(ctx, convertedProperty.get(ctx.simple_stmt()));
+        } else {
+            StringBuilder code = new StringBuilder();
+            for (tinyPythonParser.StmtContext stmt : ctx.stmt()) {
+                code.append(convertedProperty.get(stmt));
+            }
+            convertedProperty.put(ctx, code.toString());
+        }
     }
 }

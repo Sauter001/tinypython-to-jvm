@@ -23,7 +23,7 @@ public class ExecuteJasmin {
 
                 System.out.println("결과: " + result);
             } else {
-                System.out.println("Test.class 생성 실패");
+               testClass.createNewFile();
             }
         } catch (IOException | InterruptedException ie) {
             ie.printStackTrace();
