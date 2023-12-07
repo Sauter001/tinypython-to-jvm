@@ -7,7 +7,10 @@ import java.util.Stack;
 public class tinyPythonCompiler extends tinyPythonBaseListener {
     ParseTreeProperty<String> convertedProperty = new ParseTreeProperty<>(); // 바뀐 출력을 저장하는 property
     private final Stack<HashMap<String, Symbol>> symbolTable = new Stack<>();
+    private final Stack<String[]> loopState = new Stack<>();
     private final int BASE_SIZE = 16;
+    private int labelIdx = 0;
+
 
     // 생성자
     public tinyPythonCompiler() {
@@ -313,6 +316,119 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
                 code.append(convertedProperty.get(stmt));
             }
             convertedProperty.put(ctx, code.toString());
+        }
+    }
+
+    // 조건문에 대한 처리
+    @Override
+    public void exitIf_stmt(tinyPythonParser.If_stmtContext ctx) {
+        super.exitIf_stmt(ctx);
+
+        String ifTest = convertedProperty.get(ctx.test(0)); // if test 결과
+        String ifSuite = convertedProperty.get(ctx.suite(0)); // if에서 처리되는 suite
+        String escLabel = "Esc" + labelIdx;
+        String nextBranch = "Branch" + (labelIdx++);
+        StringBuilder code = new StringBuilder();
+
+        code.append(ifTest).append(nextBranch).append("\n")
+                .append(ifSuite)
+                .append("goto ").append(escLabel).append("\n")
+                .append(nextBranch).append(":\n");
+
+        // test의 수가 suite의 수보다 적으면 else가 들어갔다는 의미이다.
+        boolean isElseIncluded = ctx.test().size() < ctx.suite().size();
+
+        // elif 처리
+        for (int i = 1; i < ctx.test().size(); ++i) {
+            String elifTest = convertedProperty.get(ctx.test(i)); //elif test 결과
+            String elifSuite = convertedProperty.get(ctx.suite(i)); // elif에서 처리되는 suite
+            nextBranch = (i == ctx.test().size() - 1 && !isElseIncluded) ? escLabel : "Branch" + (labelIdx++);
+
+            code.append(elifTest).append(nextBranch).append("\n")
+                    .append(elifSuite)
+                    .append("goto ").append(escLabel).append("\n")
+                    .append(nextBranch).append(":\n");
+        }
+
+        // else 처리
+        if (isElseIncluded) {
+            String elseSuiteCode = convertedProperty.get(ctx.suite(ctx.suite().size() - 1));
+            code.append(elseSuiteCode);
+        }
+
+        // end label 처리
+        code.append(escLabel).append(":\n");
+        convertedProperty.put(ctx, code.toString());
+    }
+
+
+    @Override
+    public void exitTest(tinyPythonParser.TestContext ctx) {
+        super.exitTest(ctx);
+        String e1 = convertedProperty.get(ctx.expr(0));
+        String e2 = convertedProperty.get(ctx.expr(1));
+        String op = ctx.comp_op().getText();
+        String inst;
+        StringBuilder code = new StringBuilder();
+
+        code.append(e1).append(e2);
+
+        switch (op) {
+            case "==" -> inst = "if_icmpne ";
+            case "!=" -> inst = "if_icmpeq ";
+            case "<" -> inst = "if_icmpge ";
+            case ">" -> inst = "if_icmple ";
+            case "<=" -> inst = "if_icmpgt ";
+            case ">=" -> inst = "if_icmplt ";
+            default -> inst = "";
+        }
+        code.append(inst);
+        convertedProperty.put(ctx, code.toString());
+    }
+
+    // While loop의 처리
+    @Override
+    public void exitWhile_stmt(tinyPythonParser.While_stmtContext ctx) {
+        super.exitWhile_stmt(ctx);
+        String headLabel = "LoopHead" + labelIdx;
+        String endLabel = "LoopEnd" + (labelIdx++);
+        loopState.push(new String[]{headLabel, endLabel}); // 새 loop label 추가
+
+        String loopTest = convertedProperty.get(ctx.test());
+        String loopSuite = convertedProperty.get(ctx.suite());
+        StringBuilder code = new StringBuilder();
+
+        convertedProperty.put(ctx, code.toString());
+    }
+
+    // flow statement 처리
+    @Override
+    public void exitFlow_stmt(tinyPythonParser.Flow_stmtContext ctx) {
+        super.exitFlow_stmt(ctx);
+        if (ctx.break_stmt() != null) {
+            convertedProperty.put(ctx, convertedProperty.get(ctx.break_stmt()));
+        } else if (ctx.continue_stmt() != null) {
+            convertedProperty.put(ctx, convertedProperty.get(ctx.continue_stmt()));
+        }
+    }
+
+    @Override
+    public void exitBreak_stmt(tinyPythonParser.Break_stmtContext ctx) {
+        super.exitBreak_stmt(ctx);
+        // TODO: break 처리 구현
+        if (!loopState.isEmpty()) {
+            String endLabel = loopState.peek()[1];
+            convertedProperty.put(ctx, "goto " + endLabel + "\n");
+        }
+    }
+
+    @Override
+    public void exitContinue_stmt(tinyPythonParser.Continue_stmtContext ctx) {
+        super.exitContinue_stmt(ctx);
+        // TODO: continue 처리 구현
+        if (!loopState.isEmpty()) {
+            String headLabel = loopState.peek()[0];
+            convertedProperty.put(ctx, "goto " + headLabel + "\n");
         }
     }
 }
