@@ -397,6 +397,11 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
         String loopTest = convertedProperty.get(ctx.test());
         String loopSuite = convertedProperty.get(ctx.suite());
         StringBuilder code = new StringBuilder();
+        code.append(headLabel).append(":\n")
+                .append(loopTest).append(endLabel).append("\n")
+                .append(loopSuite)
+                .append("goto ").append(headLabel).append("\n")// Continue loop
+                .append(endLabel).append(":\n");
 
         convertedProperty.put(ctx, code.toString());
     }
