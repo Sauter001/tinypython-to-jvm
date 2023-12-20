@@ -97,10 +97,11 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
     @Override
     public void exitCompound_stmt(tinyPythonParser.Compound_stmtContext ctx) {
         super.exitCompound_stmt(ctx);
+        // compound statement는 if문과 while문이 있다.
         if (ctx.if_stmt() != null) {
             convertedProperty.put(ctx, convertedProperty.get(ctx.if_stmt())); // 변환된 if문 format 저장
         } else if (ctx.while_stmt() != null) {
-            convertedProperty.put(ctx, convertedProperty.get(ctx.while_stmt()));
+            convertedProperty.put(ctx, convertedProperty.get(ctx.while_stmt())); // 변환된 while format 저장
         }
     }
 
@@ -110,14 +111,17 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
     @Override
     public void exitSmall_stmt(tinyPythonParser.Small_stmtContext ctx) {
         super.exitSmall_stmt(ctx);
-        // small statement가 return 문에 해당하는 경우 변환된 format 저장
+        // small statement가 assignment 문에 해당하는 경우 변환된 format 저장
         if (ctx.assignment_stmt() != null) {
             convertedProperty.put(ctx, convertedProperty.get(ctx.assignment_stmt()));
         } else if (ctx.print_stmt() != null) {
+            // small statement가 print문에 해당하는 경우 동일 과정
             convertedProperty.put(ctx, convertedProperty.get(ctx.print_stmt()));
         } else if (ctx.flow_stmt() != null) {
+            // small statement가 흐름 제어문에 해당하는 경우
             convertedProperty.put(ctx, convertedProperty.get(ctx.flow_stmt()));
         } else if (ctx.return_stmt() != null) {
+            // small statement가 return문에 해당하는 경우
             convertedProperty.put(ctx, convertedProperty.get(ctx.return_stmt()));
         }
     }
@@ -127,7 +131,7 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
     public void exitAssignment_stmt(tinyPythonParser.Assignment_stmtContext ctx) {
         super.exitAssignment_stmt(ctx);
         // 예시 a = 10
-        String ident = ctx.NAME().getText(); // a
+        String ident = ctx.NAME().getText(); // a: 변수 이름
         String expr = convertedProperty.get(ctx.expr()); // expression
 
         // ident가 새로운 변수인지 판단
@@ -136,7 +140,7 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
             int index = symbolTable.peek().size(); // index 증가
             symbolTable.peek().put(ident, new Symbol("int", index)); // 정수 추가
         }
-
+        // 할당문에 대한 bytecode 생성 및 저장
         String code = expr + "istore " + (symbolTable.peek().get(ident).getIndex()) + "\n";
         convertedProperty.put(ctx, code);
     }
@@ -147,8 +151,7 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
         String code = "";
 
         if (ctx.NUMBER() != null) {
-            code = "ldc " + ctx.NUMBER().getText() + "\n";
-
+            code = "ldc " + ctx.NUMBER().getText() + "\n"; // 숫자 literal일 때 처리
         } else if (ctx.NAME() != null) {
             // Name이 있는 것은 함수 호출의 의미 또는 변수 가져오는 경우
             String ident = ctx.NAME().getText();
@@ -156,8 +159,8 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
                 // identifier에 ()이 포함되면 함수 호출
                 code = makeFunctionCall(ident, ctx.opt_paren());
             } else {
-                // 변수 가져오는 경우
-                Symbol symbol = symbolTable.peek().get(ident); // identifier에 든 값 로드
+                // 단순히 변수를 가져오는 경우
+                Symbol symbol = symbolTable.peek().get(ident); // identifier에 든 값을 operand stack에 로드
                 if (symbol != null) {
                     code = "iload " + symbol.getIndex() + "\n";
                 } else {
@@ -165,20 +168,22 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
                 }
             }
         } else if (ctx.expr().size() == 1) {
-            // 단항 연선
+            // 단항 연산
             code = convertedProperty.get(ctx.expr(0));
         } else if (ctx.expr().size() == 2) {
             // 이항 연산
             String lExpr = convertedProperty.get(ctx.expr(0));
             String rExpr = convertedProperty.get(ctx.expr(1));
             String op = ctx.getChild(1).getText(); // 연산자
-            code = lExpr + rExpr + convertOpToInst(op);
+            code = lExpr + rExpr + convertOpToInst(op); // 연산자 op에 따른 명령어
         }
 
         convertedProperty.put(ctx, code);
     }
 
+    // 연산자를 기준으로 bytecode로 변환한다
     private String convertOpToInst(String op) {
+
         if (op.equals("+")) {
             return "iadd\n";
         } else if (op.equals("-")) {
@@ -192,7 +197,8 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
         StringBuilder code = new StringBuilder();
         String signature = "";
 
-        // 인자 전달이 없는 경우 expr 변환 과정 생략
+        // 인자 전달이 없는 경우 expr 변환 과정 생략한다
+        // 인지가 있으면 해당 인자만큼 I를 추가한다. (인자는 int 뿐임)
         if (numOfArgs > 0) {
             for (tinyPythonParser.ExprContext expr : optParen.expr()) {
                 code.append(convertedProperty.get(expr));
@@ -200,8 +206,8 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
             }
         }
 
-        // signature 정의 및 기본 return int라고 가정
-        signature = ident + "(" + signature + ")I";
+        // signature 정의
+        signature = ident + "(" + signature + ")I"; // 기본 return type는 int라고 가정
         code.append("invokestatic Test/").append(signature).append("\n");
         return code.toString();
     }
@@ -210,16 +216,20 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
     @Override
     public void exitPrint_stmt(tinyPythonParser.Print_stmtContext ctx) {
         super.exitPrint_stmt(ctx);
+        // System.out 인스턴스 가져오기
         final String getPrintStreamInst = "getstatic java/lang/System/out Ljava/io/PrintStream;\n";
-        final String printArg = convertedProperty.get(ctx.print_arg());
+        final String printArg = convertedProperty.get(ctx.print_arg()); // 출력 인자값 가져오기
         String getDoPrintInst;
 
         if (ctx.print_arg().expr() != null) {
+            // 인자가 expression인 경우
+            // 인자를 정수로 받는 println 호출
             getDoPrintInst = "invokevirtual java/io/PrintStream/println(I)V\n";
         } else {
+            // 인자가 string인 경우
+            // 인자를 string으로 받는 println 호출
             getDoPrintInst = "invokevirtual java/io/PrintStream/println(Ljava/lang/String;)V\n";
         }
-
         convertedProperty.put(ctx, getPrintStreamInst + printArg + getDoPrintInst);
     }
 
@@ -245,6 +255,7 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
         StringBuilder defs = new StringBuilder();
 
         for (int i = 0; i < ctx.def_stmt().size(); ++i) {
+            // 각 함수 정의가 만든 bytecode 추가
             defs.append(convertedProperty.get(ctx.def_stmt(i)));
         }
 
@@ -256,9 +267,9 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
     public void enterDef_stmt(tinyPythonParser.Def_stmtContext ctx) {
         super.enterDef_stmt(ctx);
 
-        String funcName = ctx.NAME().getText();
+        String funcName = ctx.NAME().getText(); // 함수명
         System.out.println("<Def " + funcName + ">");
-        symbolTable.push(new HashMap<>()); // 새 symbol 추가
+        symbolTable.push(new HashMap<>()); // 새 symbol table 추가
 
         // 새 symbol에 인자 정보 추가
         HashMap<String, Symbol> localSymbol = symbolTable.peek();
@@ -276,14 +287,17 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
     public void exitDef_stmt(tinyPythonParser.Def_stmtContext ctx) {
         super.exitDef_stmt(ctx);
 
-        String funcName = ctx.NAME().getText();
-        String code = convertedProperty.get(ctx.suite());
-        String numOfArgs = "";
+        String funcName = ctx.NAME().getText(); // 함수명
+        String code = convertedProperty.get(ctx.suite()); // 함수의 body
+        String numOfArgs = ""; // 인자 수
 
+        // 함수 인자수 표기
         for (int i = 0; i < ctx.args().NAME().size(); ++i) {
             numOfArgs += "I";
         }
 
+        // 함수 정의에 대한 bytecode 생성함
+        // static method만 존재 및 int만 반환한다고 가정함
         String definition = ".method public static " + funcName + "(" + numOfArgs + ")I\n " +
                 "    .limit stack " + BASE_SIZE + "\n" +
                 "    .limit locals " + BASE_SIZE + "\n" +
@@ -291,28 +305,32 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
                 ".end method\n\n";
 
         symbolTable.pop(); // symbol table 종료
-        convertedProperty.put(ctx, definition);
+        convertedProperty.put(ctx, definition); // 생성된 bytecode 저장
         System.out.println("<End def>\n");
     }
 
+    // return문 처리
     @Override
     public void exitReturn_stmt(tinyPythonParser.Return_stmtContext ctx) {
         super.exitReturn_stmt(ctx);
         String expr = convertedProperty.get(ctx.expr());
-        String code = expr + "ireturn\n";
+        String code = expr + "ireturn\n"; // return type은 정수형만 한다고 가정
         convertedProperty.put(ctx, code);
     }
 
+    // suite 처리
     @Override
     public void exitSuite(tinyPythonParser.SuiteContext ctx) {
         super.exitSuite(ctx);
-        System.out.println("[suite]");
+        System.out.println("[Suite ends]");
         if (ctx.simple_stmt() != null) {
+            // simple statement 처리
             convertedProperty.put(ctx, convertedProperty.get(ctx.simple_stmt()));
         } else {
+            // 여러 statement가 결합된 코드의 처리
             StringBuilder code = new StringBuilder();
             for (tinyPythonParser.StmtContext stmt : ctx.stmt()) {
-                code.append(convertedProperty.get(stmt));
+                code.append(convertedProperty.get(stmt)); // bytecode로 변환된 statements 추가
             }
             convertedProperty.put(ctx, code.toString());
         }
@@ -325,14 +343,15 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
 
         String ifTest = convertedProperty.get(ctx.test(0)); // if test 결과
         String ifSuite = convertedProperty.get(ctx.suite(0)); // if에서 처리되는 suite
-        String escLabel = "Esc" + labelIdx;
-        String nextBranch = "Branch" + (labelIdx++);
+        String escLabel = "Esc" + labelIdx; // 탈출 라벨
+        String nextBranch = "Branch" + (labelIdx++); // elif, else로 분기시 사용되는 라벨
         StringBuilder code = new StringBuilder();
 
-        code.append(ifTest).append(nextBranch).append("\n")
-                .append(ifSuite)
-                .append("goto ").append(escLabel).append("\n")
-                .append(nextBranch).append(":\n");
+        // if문 bytecode 변환
+        code.append(ifTest).append(nextBranch).append("\n") // 조건 확인
+                .append(ifSuite) // if 만족시 실행부분
+                .append("goto ").append(escLabel).append("\n") // body 실행 후 탈출하는 라벨
+                .append(nextBranch).append(":\n"); // 다음 branch 이동
 
         // test의 수가 suite의 수보다 적으면 else가 들어갔다는 의미이다.
         boolean isElseIncluded = ctx.test().size() < ctx.suite().size();
@@ -343,6 +362,7 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
             String elifSuite = convertedProperty.get(ctx.suite(i)); // elif에서 처리되는 suite
             nextBranch = (i == ctx.test().size() - 1 && !isElseIncluded) ? escLabel : "Branch" + (labelIdx++);
 
+            // elif 조건 및 body 처리
             code.append(elifTest).append(nextBranch).append("\n")
                     .append(elifSuite)
                     .append("goto ").append(escLabel).append("\n")
@@ -360,18 +380,20 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
         convertedProperty.put(ctx, code.toString());
     }
 
-
+    // 비교 결과인 test의 처리
     @Override
     public void exitTest(tinyPythonParser.TestContext ctx) {
         super.exitTest(ctx);
-        String e1 = convertedProperty.get(ctx.expr(0));
-        String e2 = convertedProperty.get(ctx.expr(1));
-        String op = ctx.comp_op().getText();
+        String e1 = convertedProperty.get(ctx.expr(0)); // 비교 대상인 첫번째 expression
+        String e2 = convertedProperty.get(ctx.expr(1)); // 비교 대상인 두번째 expression
+        String op = ctx.comp_op().getText(); // 비교 연산자
         String inst;
         StringBuilder code = new StringBuilder();
 
-        code.append(e1).append(e2);
+        code.append(e1).append(e2); // 비교할 두 변환된 expression 추가
 
+        // 조견 연산자 따른 branch 구문 추가
+        // 이때 표시된 연산자와 정반대의 기능을 하는 것으로 변환한다.
         switch (op) {
             case "==" -> inst = "if_icmpne ";
             case "!=" -> inst = "if_icmpeq ";
@@ -385,22 +407,23 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
         convertedProperty.put(ctx, code.toString());
     }
 
-    // While loop의 처리
-
+    // While loop의 시작 처리
     @Override
     public void enterWhile_stmt(tinyPythonParser.While_stmtContext ctx) {
         super.enterWhile_stmt(ctx);
-
+        // 새 loop 라벨 생성
         String headLabel = "LoopHead" + labelIdx;
         String endLabel = "LoopEnd" + (labelIdx++);
         loopState.push(new String[]{headLabel, endLabel}); // 새 loop label 추가
     }
 
+    // while loop의 종료 처리
     @Override
     public void exitWhile_stmt(tinyPythonParser.While_stmtContext ctx) {
         super.exitWhile_stmt(ctx);
 
         System.out.println("[While loop]");
+        // 현재 loop의 시작, 종료 레이블 가져오기
         String headLabel = loopState.peek()[0];
         String endLabel = loopState.peek()[1];
 
