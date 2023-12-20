@@ -58,6 +58,7 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
         // 입력의 각 statement 변환
         StringBuilder mainBody = new StringBuilder();
         System.out.println("<Main body>");
+        // 변환된 stmt 모두 결합
         for (int i = 0; i < ctx.stmt().size(); ++i) {
             System.out.println(convertedProperty.get(ctx.stmt(i)));
             mainBody.append(convertedProperty.get(ctx.stmt(i)));
