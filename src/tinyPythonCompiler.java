@@ -6,10 +6,10 @@ import java.util.Stack;
 
 public class tinyPythonCompiler extends tinyPythonBaseListener {
     ParseTreeProperty<String> convertedProperty = new ParseTreeProperty<>(); // 바뀐 출력을 저장하는 property
-    private final Stack<HashMap<String, Symbol>> symbolTable = new Stack<>();
-    private final Stack<String[]> loopState = new Stack<>();
-    private final int BASE_SIZE = 16;
-    private int labelIdx = 0;
+    private final Stack<HashMap<String, Symbol>> symbolTable = new Stack<>(); //
+    private final Stack<String[]> loopState = new Stack<>(); // 이중 반복을 고려하기 위해
+    private final int BASE_SIZE = 16; // stack, local 변수 배열의 기본 크기
+    private int labelIdx = 0; // branch 처리를 위한 label 에 부여할 번호
 
 
     // 생성자
@@ -21,7 +21,6 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
     @Override
     public void exitProgram(tinyPythonParser.ProgramContext ctx) throws IOException {
         super.exitProgram(ctx);
-
         // 기본 Java byte code 시작 부분
         final String BASE_JVM =
                 ".class public Test\n" +
@@ -35,7 +34,7 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
         convertedProperty.put(ctx, convertedProperty.get(ctx.file_input()));
 
         String program = BASE_JVM + convertedProperty.get(ctx.file_input());
-
+        // Test.j에 java bytecode로 변환된 텍스트를 쓴다.
         File outputFile = new File("Test.j");
         if (!outputFile.exists()) outputFile.createNewFile();
         BufferedWriter writer = new BufferedWriter(new FileWriter(outputFile));
@@ -48,7 +47,6 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
     public void exitFile_input(tinyPythonParser.File_inputContext ctx) throws IOException {
         super.exitFile_input(ctx);
 
-        // TODO: defs 부분 구성
         String DEFS_SNIPPET = convertedProperty.get(ctx.defs());
 
         // main method의 header
@@ -272,7 +270,7 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
         }
     }
 
-    // 함수 정의  처리 끝날 시
+    // 함수 정의 처리 끝날 시
     @Override
     public void exitDef_stmt(tinyPythonParser.Def_stmtContext ctx) {
         super.exitDef_stmt(ctx);
@@ -387,12 +385,23 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
     }
 
     // While loop의 처리
+
     @Override
-    public void exitWhile_stmt(tinyPythonParser.While_stmtContext ctx) {
-        super.exitWhile_stmt(ctx);
+    public void enterWhile_stmt(tinyPythonParser.While_stmtContext ctx) {
+        super.enterWhile_stmt(ctx);
+
         String headLabel = "LoopHead" + labelIdx;
         String endLabel = "LoopEnd" + (labelIdx++);
         loopState.push(new String[]{headLabel, endLabel}); // 새 loop label 추가
+    }
+
+    @Override
+    public void exitWhile_stmt(tinyPythonParser.While_stmtContext ctx) {
+        super.exitWhile_stmt(ctx);
+
+        System.out.println("[While loop]");
+        String headLabel = loopState.peek()[0];
+        String endLabel = loopState.peek()[1];
 
         String loopTest = convertedProperty.get(ctx.test());
         String loopSuite = convertedProperty.get(ctx.suite());
@@ -410,30 +419,38 @@ public class tinyPythonCompiler extends tinyPythonBaseListener {
     @Override
     public void exitFlow_stmt(tinyPythonParser.Flow_stmtContext ctx) {
         super.exitFlow_stmt(ctx);
+        // flow 문은 break이나 continue 문일 수 있다.
         if (ctx.break_stmt() != null) {
+            // break문일 때 처리
             convertedProperty.put(ctx, convertedProperty.get(ctx.break_stmt()));
         } else if (ctx.continue_stmt() != null) {
+            // continue문일 때 처리
             convertedProperty.put(ctx, convertedProperty.get(ctx.continue_stmt()));
         }
     }
 
+    // break 처리
     @Override
     public void exitBreak_stmt(tinyPythonParser.Break_stmtContext ctx) {
         super.exitBreak_stmt(ctx);
-        // TODO: break 처리 구현
+        System.out.println("[break 진입] & " + loopState.isEmpty());
         if (!loopState.isEmpty()) {
-            String endLabel = loopState.peek()[1];
+            String endLabel = loopState.peek()[1]; // 현재 반복의 종료 label로 점프한다.
             convertedProperty.put(ctx, "goto " + endLabel + "\n");
+        } else {
+            convertedProperty.put(ctx, "");
         }
     }
 
+    // continue 처리
     @Override
     public void exitContinue_stmt(tinyPythonParser.Continue_stmtContext ctx) {
         super.exitContinue_stmt(ctx);
-        // TODO: continue 처리 구현
         if (!loopState.isEmpty()) {
             String headLabel = loopState.peek()[0];
             convertedProperty.put(ctx, "goto " + headLabel + "\n");
+        } else {
+            convertedProperty.put(ctx, "");
         }
     }
 }

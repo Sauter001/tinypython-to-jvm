@@ -32,6 +32,7 @@ bin/
 /antlr-4.13.1-complete.jar
 Test.j
 Test.tpy
+Test.class
 
 jasmin-2.4/
 ExecuteJasmin.java
